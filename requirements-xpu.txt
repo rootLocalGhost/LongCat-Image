@@ -1,0 +1,8 @@
+--index-url https://download.pytorch.org/whl/xpu
+
+accelerate
+safetensors
+torch
+torchvision
+transformers
+openai

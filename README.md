@@ -9,6 +9,7 @@
     <a href='https://arxiv.org/pdf/2512.07584'><img src='https://img.shields.io/badge/Technical Report-PDF-red'></a>
     <a href='https://longcat.ai/'><img src="https://img.shields.io/badge/🤖%20Demo-LongCat--Image-ADFF2F?color=29E154&logoColor=white"></a>
     <a href='https://github.com/meituan-longcat/LongCat-Image'><img src='https://img.shields.io/badge/GitHub-Code-black'></a>
+	<a href="https://discord.gg/EXsG52D8SW"><img src="https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white" /></a>
     <a href='https://github.com/meituan-longcat/LongCat-Flash-Chat/blob/main/figures/wechat_official_accounts.png'><img src='https://img.shields.io/badge/WeChat-LongCat-brightgreen?logo=wechat&logoColor=white'></a>
     <a href='https://x.com/Meituan_LongCat'><img src='https://img.shields.io/badge/Twitter-LongCat-white?logo=x&logoColor=white'></a>
 </div>
@@ -43,6 +44,7 @@ photorealism, deployment efficiency, and developer accessibility prevalent in cu
 [//]: # (For more details, please refer to the comprehensive [***LongCat-Image Technical Report***]&#40;https://arxiv.org/abs/2412.11963&#41;.)
 
 ### News
+- 🔥 **[2026-03-22]** LongCat-Image and LongCat-Image-Edit(-Turbo) is now supported in [**ComfyUI**](https://github.com/Comfy-Org/ComfyUI).
 - 🔥 **[2026-02-03]** We released [LongCat-Image-Edit-Turbo](https://huggingface.co/meituan-longcat/LongCat-Image-Edit-Turbo)! It is the distilled version of LongCat-Image-Edit, achieving a 10x speedup.
 - 🔥 **[2025-12-16]** LongCat-Image is now fully supported in **Diffusers**!
 - 🔥 **[2025-12-09]** [T2I-CoreBench](https://t2i-corebench.github.io/) results are out! LongCat-Image ranks **2nd** among all open-source models in comprehensive performance, surpassed only by the 32B-parameter Flux2.dev.
@@ -75,7 +77,7 @@ conda activate longcat-image
 
 # install requirements for model inference
 pip install -r infer_requirements.txt
-pip install git+https://github.com/huggingface/diffusers
+pip install -U diffusers
 ```
 
 ### Model Download
@@ -379,15 +381,6 @@ python setup.py develop
 We provide training code that enables advanced development of our LongCat‑Image‑Dev and model, including SFT, LoRA, DPO, and Image Editing training.
 
 See [TRAINING.md](./train_examples/README.md) for detailed instructions.
-
-## Community Works
-
-Community works are welcome! Please PR or inform us in Issue to add your work.
-
-- [LoRA Adapters] Fine-tuned models for specific styles and domains
-- [ComfyUI Integration] Native support for ComfyUI workflow
-- [Diffusers Pipeline] HuggingFace Diffusers integration
-- [ComfyUI Longcat Image](https://github.com/sooxt98/comfyui_longcat_image) - Custom node extension for ComfyUI workflow.
 
 
 ## License Agreement

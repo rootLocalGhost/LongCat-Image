@@ -12,9 +12,10 @@ __pycache__/
 *.egg
 
 
-# Distribution / packaging
+# Distribution / packaging / models
 .Python
 **/debug/
 **/output/
 **/build/
 weights/*
+models/*

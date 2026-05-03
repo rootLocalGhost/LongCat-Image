@@ -14,39 +14,47 @@ Requires: torch >= 2.5 with XPU support, diffusers, transformers, accelerate
 """
 
 import gc
-import sys
-import torch
 import math
-import numpy as np
-from PIL import Image
+import sys
 
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2Tokenizer, Qwen2VLProcessor
+import numpy as np
+import torch
 from diffusers import LongCatImageEditPipeline
-from diffusers.models.transformers import LongCatImageTransformer2DModel
 from diffusers.models.autoencoders import AutoencoderKL
-from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+from diffusers.models.transformers import LongCatImageTransformer2DModel
 from diffusers.pipelines.longcat_image.pipeline_longcat_image_edit import (
-    calculate_shift, retrieve_timesteps, calculate_dimensions, prepare_pos_ids, split_quotation,
+    calculate_dimensions,
+    calculate_shift,
+    prepare_pos_ids,
+    retrieve_timesteps,
+    split_quotation,
+)
+from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+from PIL import Image
+from transformers import (
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2Tokenizer,
+    Qwen2VLProcessor,
 )
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-MODEL_ID              = "meituan-longcat/LongCat-Image-Edit"
-DEVICE                = "xpu"
-DTYPE                 = torch.bfloat16
+MODEL_ID = "models/LongCat-Image-Edit-Turbo-FP8"  # Changed to local path
+DEVICE = "xpu"
+DTYPE = torch.bfloat16
 
 # Text Encoder FP8 on-the-fly quantization.
 # NOTE: Requires PyTorch nightly or >= 2.5 with XPU FP8 kernel support.
 # If you hit "aspect fp8 not supported" errors, set this to False.
-QUANTIZE_TEXT_ENCODER = False
-DTYPE_TE              = torch.float8_e4m3fn if QUANTIZE_TEXT_ENCODER else DTYPE
+QUANTIZE_TEXT_ENCODER = True
+DTYPE_TE = torch.float8_e4m3fn if QUANTIZE_TEXT_ENCODER else DTYPE
 
-INPUT_IMAGE_PATH  = "assets/test.png"
-PROMPT            = "将猫变成狗"
-NEGATIVE_PROMPT   = ""
-GUIDANCE_SCALE    = 4.5
+INPUT_IMAGE_PATH = "assets/test.png"
+PROMPT = "将猫变成狗"
+NEGATIVE_PROMPT = ""
+GUIDANCE_SCALE = 4.5
 NUM_INFERENCE_STEPS = 50
-SEED              = 43
-OUTPUT_PATH       = "./longcat_image_edit_xpu.png"
+SEED = 43
+OUTPUT_PATH = "./longcat_image_edit_xpu.png"
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOKENIZER_MAX_LEN = 512
@@ -80,7 +88,9 @@ def load_directly_to_xpu(cls, *args, dtype, **kwargs):
         )
     except Exception as e:
         print(f"  [warn] device_map load failed ({e}), falling back to CPU then XPU")
-        model = cls.from_pretrained(*args, torch_dtype=dtype, low_cpu_mem_usage=True, **kwargs)
+        model = cls.from_pretrained(
+            *args, torch_dtype=dtype, low_cpu_mem_usage=True, **kwargs
+        )
         return model.to(DEVICE)
 
 
@@ -93,7 +103,9 @@ def retrieve_latents(encoder_output, generator=None):
 
 
 @torch.no_grad()
-def encode_prompt_edit(prompt_str, pil_image, tokenizer, text_processor, text_encoder, device):
+def encode_prompt_edit(
+    prompt_str, pil_image, tokenizer, text_processor, text_encoder, device
+):
     """Encode text+image prompt for the Edit pipeline."""
     raw = text_processor.image_processor(images=pil_image, return_tensors="pt")
     pixel_values = raw["pixel_values"].to(device)
@@ -118,7 +130,7 @@ def encode_prompt_edit(prompt_str, pil_image, tokenizer, text_processor, text_en
     )
 
     # Expand image placeholder into actual image tokens
-    merge_length = text_processor.image_processor.merge_size ** 2
+    merge_length = text_processor.image_processor.merge_size**2
     text = PROMPT_PREFIX
     while IMAGE_TOKEN in text:
         n_img_tokens = image_grid_thw.prod() // merge_length
@@ -135,17 +147,29 @@ def encode_prompt_edit(prompt_str, pil_image, tokenizer, text_processor, text_en
     pt = padded.input_ids.dtype
     pm = padded.attention_mask.dtype
 
-    input_ids = torch.cat([
-        torch.tensor(prefix_ids, dtype=pt),
-        padded.input_ids[0],
-        torch.tensor(suffix_ids, dtype=pt),
-    ]).unsqueeze(0).to(device)
+    input_ids = (
+        torch.cat(
+            [
+                torch.tensor(prefix_ids, dtype=pt),
+                padded.input_ids[0],
+                torch.tensor(suffix_ids, dtype=pt),
+            ]
+        )
+        .unsqueeze(0)
+        .to(device)
+    )
 
-    attn_mask = torch.cat([
-        torch.ones(len(prefix_ids), dtype=pm),
-        padded.attention_mask[0],
-        torch.ones(len(suffix_ids), dtype=pm),
-    ]).unsqueeze(0).to(device)
+    attn_mask = (
+        torch.cat(
+            [
+                torch.ones(len(prefix_ids), dtype=pm),
+                padded.attention_mask[0],
+                torch.ones(len(suffix_ids), dtype=pm),
+            ]
+        )
+        .unsqueeze(0)
+        .to(device)
+    )
 
     out = text_encoder(
         input_ids=input_ids,
@@ -169,9 +193,13 @@ if __name__ == "__main__":
 
     # ── Phase 0: lightweight objects ──────────────────────────────────────────
     print("\n[0/4] Loading scheduler / tokenizer / processor …")
-    scheduler      = FlowMatchEulerDiscreteScheduler.from_pretrained(MODEL_ID, subfolder="scheduler")
-    tokenizer      = Qwen2Tokenizer.from_pretrained(MODEL_ID, subfolder="tokenizer")
-    text_processor = Qwen2VLProcessor.from_pretrained(MODEL_ID, subfolder="text_processor")
+    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+        MODEL_ID, subfolder="scheduler"
+    )
+    tokenizer = Qwen2Tokenizer.from_pretrained(MODEL_ID, subfolder="tokenizer")
+    text_processor = Qwen2VLProcessor.from_pretrained(
+        MODEL_ID, subfolder="text_processor"
+    )
 
     pipe = LongCatImageEditPipeline(
         scheduler=scheduler,
@@ -190,8 +218,8 @@ if __name__ == "__main__":
     calc_w, calc_h = calculate_dimensions(1024 * 1024, w_img / h_img)
 
     resized_image = pipe.image_processor.resize(initial_image, calc_h, calc_w)
-    prompt_pil    = pipe.image_processor.resize(initial_image, calc_h // 2, calc_w // 2)
-    image_tensor  = pipe.image_processor.preprocess(resized_image, calc_h, calc_w)
+    prompt_pil = pipe.image_processor.resize(initial_image, calc_h // 2, calc_w // 2)
+    image_tensor = pipe.image_processor.preprocess(resized_image, calc_h, calc_w)
 
     # ── Phase 1: VAE encode input image ───────────────────────────────────────
     print(f"\n[1/4] Loading VAE directly to {DEVICE} for input image encoding …")
@@ -199,7 +227,7 @@ if __name__ == "__main__":
 
     pipe.register_modules(vae=vae)
     generator = torch.Generator(device="cpu").manual_seed(SEED)
-    num_ch    = 16
+    num_ch = 16
 
     # Compute latent dims
     lat_h = 2 * (int(calc_h) // (pipe.vae_scale_factor * 2))
@@ -208,7 +236,9 @@ if __name__ == "__main__":
     img_t = image_tensor.to(device=device, dtype=DTYPE)
     with torch.no_grad():
         image_latents = retrieve_latents(vae.encode(img_t))
-        image_latents = (image_latents - vae.config.shift_factor) * vae.config.scaling_factor
+        image_latents = (
+            image_latents - vae.config.shift_factor
+        ) * vae.config.scaling_factor
     image_latents_packed = pipe._pack_latents(image_latents, 1, num_ch, lat_h, lat_w)
 
     print("      VAE image encoding done. Unloading …")
@@ -232,7 +262,12 @@ if __name__ == "__main__":
         ).to(DTYPE)
         if do_cfg:
             neg_embeds = encode_prompt_edit(
-                NEGATIVE_PROMPT, prompt_pil, tokenizer, text_processor, text_encoder, device
+                NEGATIVE_PROMPT,
+                prompt_pil,
+                tokenizer,
+                text_processor,
+                text_encoder,
+                device,
             ).to(DTYPE)
         else:
             neg_embeds = None
@@ -255,21 +290,28 @@ if __name__ == "__main__":
         neg_text_ids = None
 
     latents_ids = prepare_pos_ids(
-        modality_id=1, type="image",
+        modality_id=1,
+        type="image",
         start=(prompt_len, prompt_len),
-        height=lat_h // 2, width=lat_w // 2,
+        height=lat_h // 2,
+        width=lat_w // 2,
     ).to(device)
     img_lat_ids = prepare_pos_ids(
-        modality_id=2, type="image",
+        modality_id=2,
+        type="image",
         start=(prompt_len, prompt_len),
-        height=lat_h // 2, width=lat_w // 2,
-    ).to(device, dtype=torch.float32)  # float32 instead of float64 for XPU compatibility
+        height=lat_h // 2,
+        width=lat_w // 2,
+    ).to(
+        device, dtype=torch.float32
+    )  # float32 instead of float64 for XPU compatibility
 
     latent_image_ids = torch.cat([latents_ids, img_lat_ids], dim=0)
 
     # Noise latents
     noise_shape = (1, num_ch, lat_h, lat_w)
     from diffusers.utils.torch_utils import randn_tensor
+
     latents = randn_tensor(noise_shape, generator=generator, device=device, dtype=DTYPE)
     latents = pipe._pack_latents(latents, 1, num_ch, lat_h, lat_w)
 
@@ -298,7 +340,7 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         for i, t in enumerate(timesteps):
-            sys.stdout.write(f"\r      Step {i+1}/{NUM_INFERENCE_STEPS}")
+            sys.stdout.write(f"\r      Step {i + 1}/{NUM_INFERENCE_STEPS}")
             sys.stdout.flush()
 
             latent_input = torch.cat([latents, image_latents_packed], dim=1)
@@ -343,8 +385,12 @@ if __name__ == "__main__":
     pipe.register_modules(vae=vae)
 
     with torch.no_grad():
-        latents_out = pipe._unpack_latents(latents, calc_h, calc_w, pipe.vae_scale_factor)
-        latents_out = (latents_out / vae.config.scaling_factor) + vae.config.shift_factor
+        latents_out = pipe._unpack_latents(
+            latents, calc_h, calc_w, pipe.vae_scale_factor
+        )
+        latents_out = (
+            latents_out / vae.config.scaling_factor
+        ) + vae.config.shift_factor
         latents_out = latents_out.to(dtype=vae.dtype)
         img_tensor = vae.decode(latents_out, return_dict=False)[0]
 
